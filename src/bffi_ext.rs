@@ -272,6 +272,7 @@ pub trait QuicSsl {
 
     fn in_early_data(&self) -> bool;
     fn early_data_accepted(&self) -> bool;
+    fn set_early_data_enabled(&mut self, enabled: bool);
     fn set_quic_method(&mut self, method: &bffi::SSL_QUIC_METHOD) -> BoringResult;
     fn set_quic_early_data_context(&mut self, value: &[u8]) -> BoringResult;
     fn get_early_data_reason(&self) -> bffi::ssl_early_data_reason_t;
@@ -408,6 +409,11 @@ impl QuicSsl for Ssl {
     #[inline]
     fn early_data_accepted(&self) -> bool {
         unsafe { bffi::SSL_early_data_accepted(self.as_ptr()) == 1 }
+    }
+
+    #[inline]
+    fn set_early_data_enabled(&mut self, enabled: bool) {
+        unsafe { bffi::SSL_set_early_data_enabled(self.as_ptr(), enabled as c_int) }
     }
 
     fn set_quic_method(&mut self, method: &bffi::SSL_QUIC_METHOD) -> BoringResult {

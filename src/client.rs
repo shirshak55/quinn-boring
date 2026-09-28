@@ -3,10 +3,13 @@ use crate::bffi_ext::QuicSslContext;
 use crate::error::{map_result, Result};
 use crate::session_state::{SessionState, QUIC_METHOD};
 use crate::version::QuicVersion;
-use crate::{Entry, KeyLog, NoKeyLog, QuicSsl, QuicSslSession, SessionCache, SimpleCache};
+use crate::{
+    Entry, Error, KeyLog, NoKeyLog, NoSessionCache, QuicSsl, QuicSslSession, SessionCache,
+    SimpleCache,
+};
 use btls::ssl::{Ssl, SslContext, SslContextBuilder, SslMethod, SslSession, SslVersion};
 use btls_sys as bffi;
-use bytes::{Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use foreign_types_shared::ForeignType;
 use once_cell::sync::Lazy;
 use quinn_proto::{
@@ -17,7 +20,7 @@ use std::any::Any;
 use std::ffi::c_int;
 use std::io::Cursor;
 use std::result::Result as StdResult;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{trace, warn};
 
 /// Configuration for a client-side QUIC. Wraps around a BoringSSL [SslContext].
@@ -216,16 +219,66 @@ impl Session {
             );
         }
 
+        Self::start(
+            ssl,
+            version,
+            server_name_bytes,
+            session_cache,
+            zero_rtt_peer_params,
+            cfg.key_log
+                .as_ref()
+                .map_or(Arc::new(NoKeyLog), |key_log| key_log.clone()),
+        )
+    }
+
+    /// A session driving `ssl` as [`MirrorConfig`] describes.
+    fn mirrored(
+        mut ssl: Ssl,
+        resumed_transport_parameters: Option<&[u8]>,
+        early_data: bool,
+        version: QuicVersion,
+        server_name: &str,
+        params: &[u8],
+    ) -> Result<Box<Self>> {
+        ssl.set_quic_method(&QUIC_METHOD)?;
+        ssl.set_quic_use_legacy_codepoint(version.uses_legacy_extension());
+        ssl.set_connect_state();
+        ssl.set_quic_transport_params(params)?;
+
+        let zero_rtt_peer_params = resumed_transport_parameters
+            .map(|mut params| TransportParameters::read(Side::Client, &mut params))
+            .transpose()
+            .map_err(|e| {
+                Error::invalid_input(format!(
+                    "failed parsing resumed transport parameters: {:?}",
+                    e
+                ))
+            })?;
+        // quinn needs the server's transport parameters to send 0-RTT data.
+        ssl.set_early_data_enabled(early_data && zero_rtt_peer_params.is_some());
+
+        Self::start(
+            ssl,
+            version,
+            Bytes::copy_from_slice(server_name.as_bytes()),
+            Arc::new(NoSessionCache),
+            zero_rtt_peer_params,
+            Arc::new(NoKeyLog),
+        )
+    }
+
+    /// Starts the handshake of a session driving `ssl`, configured as a client.
+    fn start(
+        ssl: Ssl,
+        version: QuicVersion,
+        server_name: Bytes,
+        session_cache: Arc<dyn SessionCache>,
+        zero_rtt_peer_params: Option<TransportParameters>,
+        key_log: Arc<dyn KeyLog>,
+    ) -> Result<Box<Self>> {
         let mut session = Box::new(Self {
-            state: SessionState::new(
-                ssl,
-                Side::Client,
-                version,
-                cfg.key_log
-                    .as_ref()
-                    .map_or(Arc::new(NoKeyLog), |key_log| key_log.clone()),
-            )?,
-            server_name: server_name_bytes,
+            state: SessionState::new(ssl, Side::Client, version, key_log)?,
+            server_name,
             session_cache,
             zero_rtt_peer_params,
             handshake_data_available: false,
@@ -418,4 +471,133 @@ fn encode_params(params: &TransportParameters) -> Bytes {
     let mut out = BytesMut::with_capacity(128);
     params.write(&mut out);
     out.freeze()
+}
+
+/// A client configuration for one connection that starts from a caller's [`Ssl`] and sends a
+/// caller's transport parameters, so the connection offers another client's ClientHello and
+/// transport parameters.
+///
+/// The [`Ssl`] already verifies and announces (SNI) the server name as it should, offers the
+/// ClientHello, and holds the session to resume, if any; this adds the QUIC transport. Its
+/// context's callbacks are the caller's: this installs none, so a caller keeps the sessions the
+/// connection receives with its context's new-session callback (with the server's transport
+/// parameters, `SSL_get_peer_quic_transport_params`, for 0-RTT). A configuration serves a
+/// single connection.
+pub struct MirrorConfig {
+    ssl: Mutex<Option<Ssl>>,
+    transport_parameters: Vec<(u64, Bytes)>,
+    resumed_transport_parameters: Option<Bytes>,
+    early_data: bool,
+}
+
+impl MirrorConfig {
+    /// A connection starting from `ssl` and sending `transport_parameters` as listed, in order,
+    /// with its own initial_source_connection_id in place of the listed one's value.
+    pub fn new(ssl: Ssl, transport_parameters: Vec<(u64, Bytes)>) -> Self {
+        Self {
+            ssl: Mutex::new(Some(ssl)),
+            transport_parameters,
+            resumed_transport_parameters: None,
+            early_data: false,
+        }
+    }
+
+    /// Sets the transport parameters the server sent on the connection that received the
+    /// session the [`Ssl`] resumes, encoded as it sent them. With them, the connection can
+    /// send 0-RTT data (see [`MirrorConfig::set_early_data`]).
+    pub fn set_resumed_transport_parameters(&mut self, params: Option<Bytes>) {
+        self.resumed_transport_parameters = params;
+    }
+
+    /// Sets whether the connection offers 0-RTT (early data) when it resumes a session that
+    /// allows it and has the server's transport parameters. Off by default.
+    pub fn set_early_data(&mut self, enabled: bool) {
+        self.early_data = enabled;
+    }
+
+    /// `own`, quinn's transport parameters for the connection, as the listed ones.
+    fn encode(&self, own: &TransportParameters) -> StdResult<Bytes, ConnectError> {
+        const INITIAL_SOURCE_CONNECTION_ID: u64 = 0x0f;
+        let own = encode_params(own);
+        let mut reader = own.as_ref();
+        let mut scid = None;
+        while !reader.is_empty() {
+            let id = read_varint(&mut reader).ok_or(ConnectError::EndpointStopping)?;
+            let len = read_varint(&mut reader).ok_or(ConnectError::EndpointStopping)? as usize;
+            let value = reader.get(..len).ok_or(ConnectError::EndpointStopping)?;
+            if id == INITIAL_SOURCE_CONNECTION_ID {
+                scid = Some(value);
+            }
+            reader = &reader[len..];
+        }
+        let scid = scid.ok_or(ConnectError::EndpointStopping)?;
+        let mut out = BytesMut::new();
+        for (id, value) in &self.transport_parameters {
+            let value = match *id {
+                INITIAL_SOURCE_CONNECTION_ID => scid,
+                _ => value,
+            };
+            write_varint(&mut out, *id);
+            write_varint(&mut out, value.len() as u64);
+            out.extend_from_slice(value);
+        }
+        Ok(out.freeze())
+    }
+}
+
+impl crypto::ClientConfig for MirrorConfig {
+    fn start_session(
+        self: Arc<Self>,
+        version: u32,
+        server_name: &str,
+        params: &TransportParameters,
+    ) -> StdResult<Box<dyn crypto::Session>, ConnectError> {
+        let version = QuicVersion::parse(version).map_err(|_| ConnectError::UnsupportedVersion)?;
+        let params = self.encode(params)?;
+        let ssl = self
+            .ssl
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or(ConnectError::EndpointStopping)?;
+        Ok(Session::mirrored(
+            ssl,
+            self.resumed_transport_parameters.as_deref(),
+            self.early_data,
+            version,
+            server_name,
+            &params,
+        )
+        .map_err(|e| {
+            warn!(
+                "failed starting mirrored session for {}: {:?}",
+                server_name, e
+            );
+            ConnectError::EndpointStopping
+        })?)
+    }
+}
+
+/// Reads a QUIC variable-length integer.
+fn read_varint(buf: &mut &[u8]) -> Option<u64> {
+    let first = *buf.first()?;
+    let len = 1usize << (first >> 6);
+    let bytes = buf.get(..len)?;
+    let value = bytes[1..]
+        .iter()
+        .fold(u64::from(first & 0x3f), |value, byte| {
+            value << 8 | u64::from(*byte)
+        });
+    *buf = &buf[len..];
+    Some(value)
+}
+
+/// Writes a QUIC variable-length integer.
+fn write_varint(out: &mut BytesMut, value: u64) {
+    match value {
+        0..=0x3f => out.put_u8(value as u8),
+        0x40..=0x3fff => out.put_u16(value as u16 | 0x4000),
+        0x4000..=0x3fff_ffff => out.put_u32(value as u32 | 0x8000_0000),
+        _ => out.put_u64(value | 0xc000_0000_0000_0000),
+    }
 }

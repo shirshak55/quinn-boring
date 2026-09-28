@@ -20,7 +20,7 @@ mod version;
 
 // Export the public interface.
 pub use bffi_ext::*;
-pub use client::Config as ClientConfig;
+pub use client::{Config as ClientConfig, MirrorConfig};
 pub use error::{Error, Result};
 pub use handshake_token::HandshakeTokenKey;
 pub use hmac::HmacKey;
