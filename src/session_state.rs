@@ -50,6 +50,9 @@ pub(crate) struct SessionState {
     write_level: Level,
     levels: [LevelState; Level::NUM_LEVELS],
     handshaking: bool,
+    /// The handshake bytes a client wrote at the Initial level: its ClientHello, and another
+    /// after a HelloRetryRequest
+    initial_written: Vec<u8>,
 }
 
 impl SessionState {
@@ -79,6 +82,7 @@ impl SessionState {
             levels,
             early_data_rejected: false,
             handshaking: true,
+            initial_written: Vec::new(),
         });
 
         // Registers this instance as ex data on the underlying Ssl in order to support
@@ -121,15 +125,25 @@ impl SessionState {
         };
 
         let alpn_protocol = self.ssl.selected_alpn_protocol().map(Vec::from);
+        let client_hello = self.client_hello();
 
-        if sni_name.is_none() && alpn_protocol.is_none() {
+        if sni_name.is_none() && alpn_protocol.is_none() && client_hello.is_none() {
             None
         } else {
             Some(Box::new(HandshakeData {
                 protocol: alpn_protocol,
                 server_name: sni_name,
+                client_hello,
             }))
         }
+    }
+
+    /// The first handshake message a client wrote, once complete: its ClientHello.
+    fn client_hello(&self) -> Option<Vec<u8>> {
+        let header = self.initial_written.get(..4)?;
+        let len = 4
+            + (usize::from(header[1]) << 16 | usize::from(header[2]) << 8 | usize::from(header[3]));
+        self.initial_written.get(..len).map(<[u8]>::to_vec)
     }
 
     #[inline]
@@ -422,6 +436,9 @@ impl SessionState {
 
         // Add the message to the level.
         state.write_buffer.extend_from_slice(data);
+        if self.side.is_client() && level == Level::Initial {
+            self.initial_written.extend_from_slice(data);
+        }
         Ok(())
     }
 

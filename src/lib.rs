@@ -41,6 +41,11 @@ pub struct HandshakeData {
     ///
     /// Always `None` for outgoing connections
     pub server_name: Option<String>,
+
+    /// The first ClientHello handshake message the client sent
+    ///
+    /// Always `None` for incoming connections
+    pub client_hello: Option<Vec<u8>>,
 }
 
 pub mod helpers {
