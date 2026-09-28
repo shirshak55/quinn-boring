@@ -234,9 +234,18 @@ impl SessionState {
         retry::is_valid_retry(&self.version, orig_dst_cid, header, payload)
     }
 
+    /// The peer's certificate chain as a `Vec<Vec<u8>>` of DER certificates, leaf first.
     #[inline]
     pub(crate) fn peer_identity(&self) -> Option<Box<dyn Any>> {
-        todo!()
+        let mut chain = Vec::new();
+        // A server's peer chain lacks the client's leaf; a client's includes the server's.
+        if self.side.is_server() {
+            chain.push(self.ssl.peer_certificate()?.to_der().ok()?);
+        }
+        for cert in self.ssl.peer_cert_chain().into_iter().flatten() {
+            chain.push(cert.to_der().ok()?);
+        }
+        (!chain.is_empty()).then(|| Box::new(chain) as Box<dyn Any>)
     }
 
     #[inline]
