@@ -1,4 +1,4 @@
-use boring_sys as bffi;
+use btls_sys as bffi;
 use quinn_proto::{TransportError, TransportErrorCode};
 use std::ffi::{c_int, CStr};
 use std::fmt;

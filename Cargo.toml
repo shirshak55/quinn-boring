@@ -1,9 +1,9 @@
 [package]
-name = "quinn-boring"
+name = "quinn-btls"
 version = "0.2.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/quinn-rs/quinn-boring"
-description = "BoringSSL crypto provider for quinn"
+description = "BoringSSL (btls) crypto provider for quinn"
 keywords = ["quic"]
 categories = ["network-programming", "asynchronous"]
 edition = "2021"
@@ -14,12 +14,12 @@ maintenance = { status = "passively-maintained" }
 
 [features]
 default = ["runtime-tokio"]
-fips = ["boring/fips", "boring-sys/fips"]
+fips = ["btls/fips", "btls-sys/fips"]
 runtime-tokio = ["quinn/runtime-tokio"]
 
 [dependencies]
-boring = "4"
-boring-sys = "4"
+btls = "0.5.6"
+btls-sys = "0.5.6"
 bytes = "1"
 foreign-types-shared = "0.3"
 lru = "0.12"

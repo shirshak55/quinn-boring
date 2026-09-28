@@ -1,7 +1,7 @@
 use crate::aead::Aead;
 use crate::error::{Error, Result};
 use crate::hkdf::Hkdf;
-use boring_sys as bffi;
+use btls_sys as bffi;
 use once_cell::sync::Lazy;
 use std::fmt::{Debug, Formatter};
 

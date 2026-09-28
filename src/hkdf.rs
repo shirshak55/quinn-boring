@@ -1,6 +1,6 @@
 use crate::error::{map_result, Error, Result};
-use boring::hash::MessageDigest;
-use boring_sys as bffi;
+use btls::hash::MessageDigest;
+use btls_sys as bffi;
 use bytes::{BufMut, BytesMut};
 use once_cell::sync::Lazy;
 

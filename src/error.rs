@@ -1,4 +1,4 @@
-use boring::error::ErrorStack;
+use btls::error::ErrorStack;
 use quinn_proto::{crypto, ConnectError, TransportError};
 use std::ffi::c_int;
 use std::fmt::{Debug, Display, Formatter};

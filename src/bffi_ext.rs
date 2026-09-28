@@ -1,10 +1,10 @@
 use crate::error::{br, br_zero_is_success, BoringResult};
-use boring::error::ErrorStack;
-use boring::pkey::{HasPrivate, PKey};
-use boring::ssl::{Ssl, SslContext, SslContextRef, SslSession};
-use boring::x509::store::X509StoreBuilderRef;
-use boring::x509::X509;
-use boring_sys as bffi;
+use btls::error::ErrorStack;
+use btls::pkey::{HasPrivate, PKey};
+use btls::ssl::{Ssl, SslContext, SslContextRef, SslSession};
+use btls::x509::store::X509StoreBuilderRef;
+use btls::x509::X509;
+use btls_sys as bffi;
 use bytes::{Buf, BufMut};
 use foreign_types_shared::{ForeignType, ForeignTypeRef};
 use std::ffi::{c_char, c_int, c_uint, c_void, CStr};
@@ -371,7 +371,7 @@ impl QuicSsl for Ssl {
 
     fn set_verify_hostname(&mut self, domain: &str) -> BoringResult {
         let param = self.param_mut();
-        param.set_hostflags(boring::x509::verify::X509CheckFlags::NO_PARTIAL_WILDCARDS);
+        param.set_hostflags(btls::x509::verify::X509CheckFlags::NO_PARTIAL_WILDCARDS);
         match domain.parse() {
             Ok(ip) => param.set_ip(ip)?,
             Err(_) => param.set_host(domain)?,

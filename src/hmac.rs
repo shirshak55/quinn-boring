@@ -1,7 +1,7 @@
 use crate::error::map_ptr_result;
 use crate::hkdf::DIGEST_BLOCK_LEN;
-use boring::hash::MessageDigest;
-use boring_sys as bffi;
+use btls::hash::MessageDigest;
+use btls_sys as bffi;
 use quinn_proto::crypto;
 use rand::RngCore;
 use std::ffi::{c_uint, c_void};

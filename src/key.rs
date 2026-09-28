@@ -3,7 +3,7 @@ use crate::macros::bounded_array;
 use crate::secret::Secret;
 use crate::suite::{CipherSuite, ID};
 use crate::{Error, QuicVersion};
-use boring_sys as bffi;
+use btls_sys as bffi;
 use bytes::BytesMut;
 use quinn_proto::crypto;
 use std::ffi::c_uint;

@@ -11,10 +11,10 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use boring::pkey::PKey;
-use boring::x509::X509;
+use btls::pkey::PKey;
+use btls::x509::X509;
 use clap::Parser;
-use quinn_boring::QuicSslContext;
+use quinn_btls::QuicSslContext;
 use tracing::{error, info, info_span, Instrument as _};
 
 #[derive(Parser, Debug)]
@@ -119,7 +119,7 @@ async fn run(options: Opt) -> Result<()> {
         (vec![cert], key)
     };
 
-    let mut server_crypto = quinn_boring::ServerConfig::new()?;
+    let mut server_crypto = quinn_btls::ServerConfig::new()?;
     let ctx = server_crypto.ctx_mut();
     for (i, cert) in certs.iter().enumerate() {
         if i == 0 {
@@ -134,7 +134,7 @@ async fn run(options: Opt) -> Result<()> {
     ctx.set_private_key(key)?;
     ctx.check_private_key()?;
 
-    let mut server_config = quinn_boring::helpers::server_config(Arc::new(server_crypto))?;
+    let mut server_config = quinn_btls::helpers::server_config(Arc::new(server_crypto))?;
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
     transport_config.max_concurrent_uni_streams(0_u8.into());
 
@@ -143,7 +143,7 @@ async fn run(options: Opt) -> Result<()> {
         bail!("root path does not exist");
     }
 
-    let endpoint = quinn_boring::helpers::server_endpoint(server_config, options.listen)?;
+    let endpoint = quinn_btls::helpers::server_endpoint(server_config, options.listen)?;
     eprintln!("listening on {}", endpoint.local_addr()?);
 
     while let Some(conn) = endpoint.accept().await {
@@ -181,7 +181,7 @@ async fn handle_connection(root: Arc<Path>, conn: quinn::Incoming) -> Result<()>
         protocol = %connection
             .handshake_data()
             .unwrap()
-            .downcast::<quinn_boring::HandshakeData>().unwrap()
+            .downcast::<quinn_btls::HandshakeData>().unwrap()
             .protocol
             .map_or_else(|| "<none>".into(), |x| String::from_utf8_lossy(&x).into_owned())
     );

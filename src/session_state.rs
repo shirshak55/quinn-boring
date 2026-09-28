@@ -5,9 +5,9 @@ use crate::suite::CipherSuite;
 use crate::{
     retry, Error, HandshakeData, KeyLog, KeyLogLabel, Level, QuicSsl, QuicVersion, SslError,
 };
-use boring::error::ErrorStack;
-use boring::ssl::{NameType, Ssl};
-use boring_sys as bffi;
+use btls::error::ErrorStack;
+use btls::ssl::{NameType, Ssl};
+use btls_sys as bffi;
 use bytes::{Buf, BytesMut};
 use foreign_types_shared::ForeignType;
 use once_cell::sync::Lazy;

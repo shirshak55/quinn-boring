@@ -12,9 +12,9 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use boring::x509::X509;
+use btls::x509::X509;
 use clap::Parser;
-use quinn_boring::QuicSslContext;
+use quinn_btls::QuicSslContext;
 use tracing::{error, info};
 use url::Url;
 
@@ -73,7 +73,7 @@ async fn run(options: Opt) -> Result<()> {
         .next()
         .ok_or_else(|| anyhow!("couldn't resolve to an address"))?;
 
-    let mut client_crypto = quinn_boring::ClientConfig::new()?;
+    let mut client_crypto = quinn_btls::ClientConfig::new()?;
     if let Some(ca_path) = options.ca {
         client_crypto
             .ctx_mut()
@@ -99,7 +99,7 @@ async fn run(options: Opt) -> Result<()> {
         }
     }
 
-    let mut endpoint = quinn_boring::helpers::client_endpoint(options.bind)?;
+    let mut endpoint = quinn_btls::helpers::client_endpoint(options.bind)?;
     endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
 
     let request = format!("GET {}\r\n", url.path());

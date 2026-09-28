@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::{Error, QuicSslSession};
-use boring::ssl::{SslContextRef, SslSession};
+use btls::ssl::{SslContextRef, SslSession};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use lru::LruCache;
 use quinn_proto::{transport_parameters::TransportParameters, Side};

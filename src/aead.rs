@@ -1,6 +1,6 @@
 use crate::error::{map_result, Error, Result};
 use crate::key::{Key, Nonce, Tag};
-use boring_sys as bffi;
+use btls_sys as bffi;
 use once_cell::sync::Lazy;
 use std::mem::MaybeUninit;
 

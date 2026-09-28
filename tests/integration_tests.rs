@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Result};
-use boring::pkey::{PKey, Private};
-use boring::x509::X509;
-use boring_sys as bffi;
+use btls::pkey::{PKey, Private};
+use btls::x509::X509;
+use btls_sys as bffi;
 use core::fmt::{Debug, Formatter};
 use once_cell::sync::Lazy;
 use quinn::{Connecting, Connection, RecvStream, SendStream, WriteError, ZeroRttAccepted};
-use quinn_boring::{ClientConfig, QuicSslContext, ServerConfig};
+use quinn_btls::{ClientConfig, QuicSslContext, ServerConfig};
 use quinn_proto::{ConnectError, ConnectionError, TransportErrorCode};
 use rcgen::{BasicConstraints, CertificateParams, IsCa};
 use std::io::Write;
@@ -274,7 +274,7 @@ async fn zero_rtt_rejected() -> Result<()> {
 
 #[derive(Clone, Debug)]
 struct ConnectionInfo {
-    handshake_data: Box<quinn_boring::HandshakeData>,
+    handshake_data: Box<quinn_btls::HandshakeData>,
     keyring_material: [u8; 64],
 }
 
@@ -348,7 +348,7 @@ impl Server {
         Self::run_with_retry(server_config, false)
     }
     fn run_with_retry(server_config: quinn::ServerConfig, use_retry: bool) -> Result<Arc<Self>> {
-        let endpoint = quinn_boring::helpers::server_endpoint(server_config, local_address())?;
+        let endpoint = quinn_btls::helpers::server_endpoint(server_config, local_address())?;
         let addr = endpoint.local_addr()?;
 
         let server = Arc::new(Self {
@@ -398,7 +398,7 @@ impl Server {
         &self,
         client_config: quinn::ClientConfig,
     ) -> std::result::Result<Connecting, ConnectError> {
-        let mut endpoint = quinn_boring::helpers::client_endpoint(local_address()).unwrap();
+        let mut endpoint = quinn_btls::helpers::client_endpoint(local_address()).unwrap();
         endpoint.set_default_client_config(client_config);
 
         // Connect to the server.
@@ -497,11 +497,11 @@ fn local_address() -> SocketAddr {
     "127.0.0.1:0".parse().unwrap()
 }
 
-fn handshake_data(conn: &Connection) -> Result<Box<quinn_boring::HandshakeData>> {
+fn handshake_data(conn: &Connection) -> Result<Box<quinn_btls::HandshakeData>> {
     Ok(conn
         .handshake_data()
         .unwrap()
-        .downcast::<quinn_boring::HandshakeData>()
+        .downcast::<quinn_btls::HandshakeData>()
         .unwrap())
 }
 
@@ -510,9 +510,7 @@ fn client_config(client_crypto: ClientConfig) -> quinn::ClientConfig {
 }
 
 fn server_config(server_crypto: ServerConfig) -> Result<quinn::ServerConfig> {
-    Ok(quinn_boring::helpers::server_config(Arc::new(
-        server_crypto,
-    ))?)
+    Ok(quinn_btls::helpers::server_config(Arc::new(server_crypto))?)
 }
 
 fn client_crypto() -> ClientConfig {
@@ -609,13 +607,13 @@ impl Leaf {
     }
 
     /// Sets this to be the cert represented by the context.
-    fn set_cert_for(&self, ctx: &mut boring::ssl::SslContext) {
+    fn set_cert_for(&self, ctx: &mut btls::ssl::SslContext) {
         ctx.set_certificate(self.cert()).unwrap();
         ctx.set_private_key(self.key()).unwrap();
     }
 
     /// Configures the given context to trust this cert.
-    fn set_trusted_by(&self, ctx: &mut boring::ssl::SslContext) {
+    fn set_trusted_by(&self, ctx: &mut btls::ssl::SslContext) {
         let cert_store = ctx.cert_store_mut();
         cert_store.add_cert(self.cert()).unwrap();
         cert_store.add_cert(self.ca_cert()).unwrap();
