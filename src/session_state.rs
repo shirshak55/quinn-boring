@@ -134,6 +134,14 @@ impl SessionState {
                 protocol: alpn_protocol,
                 server_name: sni_name,
                 client_hello,
+                cipher: self
+                    .ssl
+                    .current_cipher()
+                    .and_then(|cipher| cipher.standard_name()),
+                group: self.ssl.curve(),
+                hello_retry_request: self.ssl.used_hello_retry_request(),
+                resumed: self.ssl.session_reused(),
+                peer_transport_parameters: self.ssl.get_peer_quic_transport_params().map(Vec::from),
             }))
         }
     }
