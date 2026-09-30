@@ -48,3 +48,9 @@ required-features = ["runtime-tokio"]
 [[example]]
 name = "client"
 required-features = ["runtime-tokio"]
+
+# The btls fork whose mirrored ClientHello can offer values BoringSSL does not negotiate,
+# failing a handshake whose server selects one with `SSL_R_OFFER_ONLY_VALUE_SELECTED`.
+[patch.crates-io]
+btls = { git = "https://github.com/shirshak55/btls", rev = "65bc6dad10da02637e5b553effd2d866c9cca311" }
+btls-sys = { git = "https://github.com/shirshak55/btls", rev = "65bc6dad10da02637e5b553effd2d866c9cca311" }

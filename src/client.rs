@@ -20,7 +20,7 @@ use std::any::Any;
 use std::ffi::c_int;
 use std::io::Cursor;
 use std::result::Result as StdResult;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tracing::{trace, warn};
 
 /// Configuration for a client-side QUIC. Wraps around a BoringSSL [SslContext].
@@ -231,11 +231,13 @@ impl Session {
         )
     }
 
-    /// A session driving `ssl` as [`MirrorConfig`] describes.
+    /// A session driving `ssl` as [`MirrorConfig`] describes, recording in `offer_only` the
+    /// offer-only selection that failed its handshake.
     fn mirrored(
         mut ssl: Ssl,
         resumed_transport_parameters: Option<&[u8]>,
         early_data: bool,
+        offer_only: Arc<OnceLock<String>>,
         version: QuicVersion,
         server_name: &str,
         params: &[u8],
@@ -257,14 +259,16 @@ impl Session {
         // quinn needs the server's transport parameters to send 0-RTT data.
         ssl.set_early_data_enabled(early_data && zero_rtt_peer_params.is_some());
 
-        Self::start(
+        let mut session = Self::start(
             ssl,
             version,
             Bytes::copy_from_slice(server_name.as_bytes()),
             Arc::new(NoSessionCache),
             zero_rtt_peer_params,
             Arc::new(NoKeyLog),
-        )
+        )?;
+        session.state.offer_only = Some(offer_only);
+        Ok(session)
     }
 
     /// Starts the handshake of a session driving `ssl`, configured as a client.
@@ -488,6 +492,7 @@ pub struct MirrorConfig {
     transport_parameters: Vec<(u64, Bytes)>,
     resumed_transport_parameters: Option<Bytes>,
     early_data: bool,
+    offer_only: Arc<OnceLock<String>>,
 }
 
 impl MirrorConfig {
@@ -499,6 +504,7 @@ impl MirrorConfig {
             transport_parameters,
             resumed_transport_parameters: None,
             early_data: false,
+            offer_only: Arc::default(),
         }
     }
 
@@ -513,6 +519,13 @@ impl MirrorConfig {
     /// allows it and has the server's transport parameters. Off by default.
     pub fn set_early_data(&mut self, enabled: bool) {
         self.early_data = enabled;
+    }
+
+    /// What the server selected that the [`Ssl`]'s ClientHello only offered (a value BoringSSL
+    /// does not negotiate), once that selection failed the connection's handshake with
+    /// `SSL_R_OFFER_ONLY_VALUE_SELECTED`: the error's data naming it, e.g. `group 001e`.
+    pub fn offer_only_selection(&self) -> Arc<OnceLock<String>> {
+        Arc::clone(&self.offer_only)
     }
 
     /// `own`, quinn's transport parameters for the connection, as the listed ones.
@@ -564,6 +577,7 @@ impl crypto::ClientConfig for MirrorConfig {
             ssl,
             self.resumed_transport_parameters.as_deref(),
             self.early_data,
+            Arc::clone(&self.offer_only),
             version,
             server_name,
             &params,

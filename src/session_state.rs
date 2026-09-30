@@ -19,7 +19,7 @@ use std::ffi::{c_char, c_int, CStr};
 use std::io::Cursor;
 use std::result::Result as StdResult;
 use std::slice;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tracing::{error, trace, warn};
 
 pub(crate) static QUIC_METHOD: bffi::SSL_QUIC_METHOD = bffi::SSL_QUIC_METHOD {
@@ -53,6 +53,9 @@ pub(crate) struct SessionState {
     /// The handshake bytes a client wrote at the Initial level: its ClientHello, and another
     /// after a HelloRetryRequest
     initial_written: Vec<u8>,
+    /// Where a client records what the server selected that its ClientHello only offered,
+    /// when that failed the handshake (see [`crate::MirrorConfig::offer_only_selection`]).
+    pub(crate) offer_only: Option<Arc<OnceLock<String>>>,
 }
 
 impl SessionState {
@@ -83,6 +86,7 @@ impl SessionState {
             early_data_rejected: false,
             handshaking: true,
             initial_written: Vec::new(),
+            offer_only: None,
         });
 
         // Registers this instance as ex data on the underlying Ssl in order to support
@@ -319,6 +323,9 @@ impl SessionState {
             // Update the state of the handshake.
             self.handshaking = self.ssl.is_handshaking();
 
+            if rc.value() == bffi::SSL_ERROR_SSL {
+                self.record_offer_only();
+            }
             self.check_alert()?;
             self.check_ssl_error(rc)?;
         }
@@ -329,6 +336,24 @@ impl SessionState {
             return self.check_ssl_error(ssl_err);
         }
         Ok(())
+    }
+
+    /// Records in [`Self::offer_only`] the selection of an offer-only value that failed the
+    /// handshake (`SSL_R_OFFER_ONLY_VALUE_SELECTED`, its data naming the selection), if one
+    /// did, leaving the error queue as it was.
+    fn record_offer_only(&self) {
+        let Some(slot) = &self.offer_only else {
+            return;
+        };
+        let errors = ErrorStack::get();
+        let selection = errors.errors().iter().find_map(|error| {
+            (error.library_reason(bffi::ERR_LIB_SSL)? == bffi::SSL_R_OFFER_ONLY_VALUE_SELECTED)
+                .then(|| error.data().unwrap_or_default().to_owned())
+        });
+        if let Some(selection) = selection {
+            let _ = slot.set(selection);
+        }
+        errors.put();
     }
 
     #[inline]
