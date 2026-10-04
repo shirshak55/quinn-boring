@@ -441,7 +441,7 @@ impl crypto::Session for Session {
             Some(params) => Ok(Some(params)),
             None => {
                 if self.state.ssl.in_early_data() {
-                    Ok(self.zero_rtt_peer_params)
+                    Ok(self.zero_rtt_peer_params.clone())
                 } else {
                     Ok(None)
                 }
@@ -459,6 +459,10 @@ impl crypto::Session for Session {
 
     fn is_valid_retry(&self, orig_dst_cid: &ConnectionId, header: &[u8], payload: &[u8]) -> bool {
         self.state.is_valid_retry(orig_dst_cid, header, payload)
+    }
+
+    fn switch_version(&mut self, version: u32) -> StdResult<(), crypto::UnsupportedVersion> {
+        self.state.switch_version(QuicVersion::parse(version)?)
     }
 
     fn export_keying_material(

@@ -54,3 +54,8 @@ required-features = ["runtime-tokio"]
 [patch.crates-io]
 btls = { git = "https://github.com/shirshak55/btls", rev = "65bc6dad10da02637e5b553effd2d866c9cca311" }
 btls-sys = { git = "https://github.com/shirshak55/btls", rev = "65bc6dad10da02637e5b553effd2d866c9cca311" }
+# The quinn fork whose client sessions follow a server's compatible version negotiation
+# (`crypto::Session::switch_version`, RFC 9368).
+quinn = { git = "https://github.com/shirshak55/quinn", rev = "babb5b0b94e33c9b358ce93a3349f4e00b2f0ebd" }
+quinn-proto = { git = "https://github.com/shirshak55/quinn", rev = "babb5b0b94e33c9b358ce93a3349f4e00b2f0ebd" }
+quinn-udp = { git = "https://github.com/shirshak55/quinn", rev = "babb5b0b94e33c9b358ce93a3349f4e00b2f0ebd" }

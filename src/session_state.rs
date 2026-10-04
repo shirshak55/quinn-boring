@@ -250,6 +250,23 @@ impl SessionState {
         out.map(|keys| keys.as_crypto().unwrap())
     }
 
+    /// Switches a client to `version`, which the server negotiated in place of the one it
+    /// started with, before it derived handshake keys: its Initial, Handshake and 1-RTT keys are
+    /// then `version`'s, while its 0-RTT keys stay the original version's (RFC 9369 §4.1)
+    pub(crate) fn switch_version(
+        &mut self,
+        version: QuicVersion,
+    ) -> StdResult<(), crypto::UnsupportedVersion> {
+        if self.read_level != Level::Initial || self.write_level != Level::Initial {
+            return Err(crypto::UnsupportedVersion);
+        }
+        self.version = version;
+        for level in [Level::Handshake, Level::Application] {
+            self.level_state_mut(level).builder.version = version;
+        }
+        Ok(())
+    }
+
     #[inline]
     pub(crate) fn is_valid_retry(
         &self,
